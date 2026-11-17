@@ -48,6 +48,9 @@
             >
               {{ action }}
             </button>
+            <button class="link" type="button" :data-testid="`action-${row.id}-准入检查`" @click="checkFromRow(row)">
+              准入检查
+            </button>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -71,6 +74,57 @@
         </div>
       </form>
     </div>
+
+    <section class="panel" data-testid="admission-panel">
+      <header class="panel-head">
+        <div>
+          <h3>目标站点准入检查</h3>
+          <p class="page-desc">
+            对入口URL、字符编码、抓取间隔与请求头模板做统一核验，核验通过方可进入采集；
+            同一入口URL仅保留一条有效准入记录，重复检查只更新检查时间。
+          </p>
+        </div>
+        <span class="panel-badge" data-testid="admitted-count">有效准入记录 {{ admittedCount }} 条</span>
+      </header>
+      <div class="admission-controls">
+        <label class="control-item">
+          <span>目标站点</span>
+          <select v-model="selectedSiteId" data-testid="admission-site">
+            <option value="" disabled>请选择要检查的目标站点</option>
+            <option v-for="site in rows" :key="String(site.id)" :value="site.id">
+              {{ site.站点名称 }}（{{ site.站点编号 }}）
+            </option>
+          </select>
+        </label>
+        <label class="control-item">
+          <span>重定向URL（可选）</span>
+          <input v-model="redirectUrl" data-testid="admission-redirect" placeholder="检查时观测到的重定向地址" />
+        </label>
+        <label class="control-item">
+          <span>检测编码（可选）</span>
+          <input v-model="detectedEncoding" data-testid="admission-encoding" placeholder="检查时观测到的实际编码" />
+        </label>
+        <button class="btn primary" data-testid="run-admission" type="button" :disabled="checking" @click="runAdmissionCheck">
+          {{ checking ? '检查中…' : '发起准入检查' }}
+        </button>
+      </div>
+      <p v-if="admissionMessage" class="admission-message" data-testid="admission-message">{{ admissionMessage }}</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th v-for="column in admissionColumns" :key="column">{{ column }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in admissions" :key="String(item.id)" :data-testid="`admission-${item.id}`" :data-conclusion="String(item.检查结论)">
+            <td v-for="column in admissionColumns" :key="column">{{ item[column] ?? '—' }}</td>
+          </tr>
+          <tr v-if="!admissions.length">
+            <td :colspan="admissionColumns.length" class="empty-state">暂无准入记录，选择目标站点后发起准入检查</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
     <footer class="page-foot">
       <span>共 {{ total }} 条采集目标记录</span>
@@ -105,6 +159,54 @@ const stats = computed(() => [
   { label: metricNames[1], value: rows.value.filter((row) => row.status === statuses[1]).length },
   { label: metricNames[2], value: rows.value.filter((row) => row.status === statuses[statuses.length - 1]).length },
 ])
+
+// 目标站点准入数据集：字段名与后端返回结构保持一致
+const admissionColumns = ["准入编号", "站点编号", "入口URL", "字符编码", "请求头模板", "抓取间隔", "约束来源", "检查结论", "检查时间"]
+const admissions = ref<Row[]>([])
+const selectedSiteId = ref<number | ''>('')
+const redirectUrl = ref('')
+const detectedEncoding = ref('')
+const checking = ref(false)
+const admissionMessage = ref('')
+const admittedCount = computed(() => admissions.value.filter((item) => item.检查结论 === '已准入').length)
+
+async function loadAdmissions() {
+  try {
+    const response = await request(`${ENDPOINT}/admissions?size=200`)
+    if (!response.ok) throw new Error('准入数据集读取失败')
+    const payload = await response.json()
+    admissions.value = payload.items ?? []
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '准入数据集读取失败'
+  }
+}
+
+async function runAdmissionCheck() {
+  if (!selectedSiteId.value) {
+    admissionMessage.value = '请先选择要检查的目标站点'
+    return
+  }
+  checking.value = true
+  admissionMessage.value = ''
+  try {
+    const response = await request(`${ENDPOINT}/${selectedSiteId.value}/admission/check`, {
+      method: 'POST',
+      body: JSON.stringify({ 重定向URL: redirectUrl.value, 检测编码: detectedEncoding.value }),
+    })
+    const payload = await response.json()
+    admissionMessage.value = payload.message || '准入检查已完成'
+    await loadAdmissions()
+  } catch (error) {
+    admissionMessage.value = error instanceof Error ? error.message : '准入检查请求失败'
+  } finally {
+    checking.value = false
+  }
+}
+
+function checkFromRow(row: Row) {
+  selectedSiteId.value = Number(row.id)
+  void runAdmissionCheck()
+}
 
 function resetFilters() {
   filters.value = {}
@@ -184,5 +286,8 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  void reload()
+  void loadAdmissions()
+})
 </script>

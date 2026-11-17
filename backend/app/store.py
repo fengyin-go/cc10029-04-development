@@ -9,14 +9,22 @@ from typing import Any
 from app.seed import SEED_ROWS
 
 
+# 附属数据面：目标站点准入数据集与站点选择器绑定台账。
+# 它们由采集目标、抽取规则两个业务面共用，但不是独立业务模块，
+# 不计入运营概览的模块清单，保证既有看板口径不变。
+AUX_MODULES = ("siteadmission", "selectorbinding")
+
+
 class Store:
     def __init__(self) -> None:
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
+        for name in AUX_MODULES:
+            self._tables.setdefault(name, [])
 
     def module_names(self) -> list[str]:
-        return sorted(self._tables)
+        return sorted(name for name in self._tables if name not in AUX_MODULES)
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])

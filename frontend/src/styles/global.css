@@ -33,6 +33,15 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .link { border: none; background: none; color: var(--brand); cursor: pointer; padding: 0; }
 .page-foot { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .error-text { color: #b42318; }
+/* 准入检查与绑定台账面板 */
+.panel { margin-top: 16px; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.panel-head h3 { margin: 0 0 4px; font-size: 15px; }
+.panel-badge { flex-shrink: 0; font-size: 12px; color: var(--brand); border: 1px solid var(--brand); border-radius: 999px; padding: 4px 10px; }
+.admission-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 10px; }
+.control-item span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.control-item input, .control-item select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; min-width: 200px; }
+.admission-message { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
 .modal-backdrop { position: fixed; inset: 0; background: rgb(15 23 42 / 35%); display: grid; place-items: center; padding: 20px; z-index: 20; }
 .modal { width: min(560px, 100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 20px 50px rgb(15 23 42 / 20%); }
 .create-field { display: block; margin-bottom: 10px; }

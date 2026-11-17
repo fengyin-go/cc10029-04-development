@@ -48,6 +48,9 @@
             >
               {{ action }}
             </button>
+            <button class="link" type="button" :data-testid="`action-${row.id}-建立绑定`" @click="establishBinding(row)">
+              建立绑定
+            </button>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -71,6 +74,37 @@
         </div>
       </form>
     </div>
+
+    <section class="panel" data-testid="binding-panel">
+      <header class="panel-head">
+        <div>
+          <h3>站点选择器绑定记录台账</h3>
+          <p class="page-desc">
+            绑定关系来自目标站点准入数据集，仅引用仍处于已准入状态的站点；
+            重复或并发回写的第二份结果会被拒绝。
+          </p>
+        </div>
+        <button class="btn" data-testid="sync-bindings" type="button" :disabled="syncing" @click="syncBindings">
+          {{ syncing ? '同步中…' : '从准入数据集同步绑定' }}
+        </button>
+      </header>
+      <p v-if="bindingMessage" class="admission-message" data-testid="binding-message">{{ bindingMessage }}</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th v-for="column in bindingColumns" :key="column">{{ column }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in bindings" :key="String(item.id)" :data-testid="`binding-${item.id}`" :data-status="String(item.status)">
+            <td v-for="column in bindingColumns" :key="column">{{ item[column] ?? '—' }}</td>
+          </tr>
+          <tr v-if="!bindings.length">
+            <td :colspan="bindingColumns.length" class="empty-state">暂无绑定记录，可先在采集目标页通过准入检查</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
     <footer class="page-foot">
       <span>共 {{ total }} 条抽取规则记录</span>
@@ -105,6 +139,50 @@ const stats = computed(() => [
   { label: metricNames[1], value: rows.value.filter((row) => row.status === statuses[1]).length },
   { label: metricNames[2], value: rows.value.filter((row) => row.status === statuses[statuses.length - 1]).length },
 ])
+
+// 站点选择器绑定记录台账：字段名与后端返回结构保持一致
+const bindingColumns = ["绑定编号", "规则编号", "站点编号", "站点名称", "入口URL", "准入编号", "约束来源", "绑定时间", "status"]
+const bindings = ref<Row[]>([])
+const bindingMessage = ref('')
+const syncing = ref(false)
+
+async function loadBindings() {
+  try {
+    const response = await request(`${ENDPOINT}/bindings?size=200`)
+    if (!response.ok) throw new Error('绑定台账读取失败')
+    const payload = await response.json()
+    bindings.value = payload.items ?? []
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '绑定台账读取失败'
+  }
+}
+
+async function establishBinding(row: Row) {
+  bindingMessage.value = ''
+  try {
+    const response = await request(`${ENDPOINT}/${row.id}/bindings`, { method: 'POST' })
+    const payload = await response.json()
+    bindingMessage.value = payload.message || '绑定操作已完成'
+    await loadBindings()
+  } catch (error) {
+    bindingMessage.value = error instanceof Error ? error.message : '建立绑定请求失败'
+  }
+}
+
+async function syncBindings() {
+  syncing.value = true
+  bindingMessage.value = ''
+  try {
+    const response = await request(`${ENDPOINT}/bindings/sync`, { method: 'POST' })
+    const payload = await response.json()
+    bindingMessage.value = payload.message || '同步已完成'
+    await loadBindings()
+  } catch (error) {
+    bindingMessage.value = error instanceof Error ? error.message : '同步请求失败'
+  } finally {
+    syncing.value = false
+  }
+}
 
 function resetFilters() {
   filters.value = {}
@@ -184,5 +262,8 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  void reload()
+  void loadBindings()
+})
 </script>

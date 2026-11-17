@@ -65,6 +65,24 @@ def export_entries(
         headers={"Content-Disposition": 'attachment; filename="selector.csv"'})
 
 
+@router.get("/bindings", response_model=PageResult[dict])
+def list_bindings(
+    keyword: str | None = Query(default=None, description="按规则编号检索"),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=200),
+) -> PageResult[dict]:
+    """读取站点选择器绑定记录台账；必须声明在 /{entry_id} 之前。"""
+    items, total = service.list_bindings(keyword=keyword, page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.post("/bindings/sync", response_model=ActionResult)
+def sync_bindings() -> ActionResult:
+    """从目标站点准入数据集全量同步绑定台账，重复结果只生效一次。"""
+    message = service.sync_bindings()
+    return ActionResult(ok=True, message=message)
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条选择器规则明细；不存在时给出可读的错误说明。"""
@@ -90,3 +108,15 @@ def run_action(entry_id: int, payload: ActionPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
+
+
+@router.post("/{entry_id}/bindings", response_model=ActionResult)
+def establish_binding(entry_id: int) -> ActionResult:
+    """读取目标站点准入数据集，为单条规则建立站点选择器绑定记录。
+
+    绑定关系必须引用仍处于已准入状态的站点；已存在生效绑定时拒绝第二份结果。
+    """
+    binding, message = service.establish_binding(entry_id)
+    if binding is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=binding)

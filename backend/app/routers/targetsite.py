@@ -7,7 +7,7 @@ import io
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
+from app.schemas import ActionPayload, ActionResult, AdmissionCheckPayload, EntryPayload, PageResult
 from app.services.targetsite import TargetsiteService
 
 router = APIRouter(prefix="/api/targetsite", tags=["采集目标"])
@@ -65,6 +65,18 @@ def export_entries(
         headers={"Content-Disposition": 'attachment; filename="targetsite.csv"'})
 
 
+@router.get("/admissions", response_model=PageResult[dict])
+def list_admissions(
+    keyword: str | None = Query(default=None, description="按站点编号检索"),
+    conclusion: str | None = Query(default=None, description="已准入、未准入"),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=200),
+) -> PageResult[dict]:
+    """读取目标站点准入数据集；必须声明在 /{entry_id} 之前避免被路径参数吞掉。"""
+    items, total = service.list_admissions(keyword=keyword, conclusion=conclusion, page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size)
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条目标站点明细；不存在时给出可读的错误说明。"""
@@ -90,3 +102,21 @@ def run_action(entry_id: int, payload: ActionPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
+
+
+@router.post("/{entry_id}/admission/check", response_model=ActionResult)
+def check_admission(entry_id: int, payload: AdmissionCheckPayload | None = None) -> ActionResult:
+    """校验站点可采集性并生成目标站点准入数据集。
+
+    同一入口URL重复检查只更新检查时间，不会产生第二条有效准入记录；
+    并发写入时只允许一个提交成功。
+    """
+    payload = payload or AdmissionCheckPayload()
+    record, message = service.check_admission(
+        entry_id,
+        redirect_url=(payload.重定向URL or "").strip(),
+        detected_encoding=(payload.检测编码 or "").strip(),
+    )
+    if record is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=record)

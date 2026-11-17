@@ -1,8 +1,13 @@
-"""采集目标业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""采集目标业务规则：状态流转、字段校验与筛选口径都收在这里。
+
+准入检查（目标站点准入数据集）的规则也由采集目标判定：
+口径、上限、范围、条件同时生效，阈值常量集中在 app.services.siteadmission。
+"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.services import siteadmission
 from app.store import store
 
 MODULE = "targetsite"
@@ -63,3 +68,56 @@ class TargetsiteService:
         entry["pending"] = target != STATUS_ORDER[-1]
         entry["abnormal"] = action in NEGATIVE_ACTIONS
         return entry, f"目标站点已{action}"
+
+    def list_admissions(
+        self,
+        *,
+        keyword: str | None = None,
+        conclusion: str | None = None,
+        page: int = 1,
+        size: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """读取目标站点准入数据集；字段名与返回结构保持稳定。"""
+        rows = siteadmission.list_admissions()
+        if keyword:
+            rows = [row for row in rows if keyword.casefold() in str(row.get("站点编号", "")).casefold()]
+        if conclusion:
+            rows = [row for row in rows if row.get("检查结论") == conclusion]
+        total = len(rows)
+        start = (page - 1) * size
+        return rows[start:start + size], total
+
+    def check_admission(
+        self,
+        entry_id: int,
+        *,
+        redirect_url: str = "",
+        detected_encoding: str = "",
+    ) -> tuple[dict[str, Any] | None, str]:
+        """校验站点可采集性并提交目标站点准入数据集。
+
+        同一入口URL只保留一条有效记录：重复检查只更新检查时间与约束快照；
+        并发写入由数据面的锁串行化，只允许一个提交成功。
+        """
+        site = store.find(MODULE, entry_id)
+        if site is None:
+            return None, f"目标站点 {entry_id} 不存在或已归档"
+        result = siteadmission.check_site_admission(
+            site, redirect_url=redirect_url, detected_encoding=detected_encoding)
+        record = result["record"]
+        if record is None:
+            return None, f"准入检查未通过：{'；'.join(result['reasons'])}；未生成准入记录"
+        if result["conclusion"] == siteadmission.ADMITTED:
+            message = f"准入检查通过，结论：已准入（{record['准入编号']}）"
+            if not result["created"]:
+                message += "；该入口URL已存在有效准入记录，本次仅更新检查时间"
+            message += f"；回写站点选择器绑定{result['bound']}条"
+            if result["rejected"]:
+                message += f"，拒绝重复{result['rejected']}条"
+        else:
+            message = f"准入检查未通过：{'；'.join(result['reasons'])}"
+            if result["invalidated"]:
+                message += f"；同步失效绑定{result['invalidated']}条"
+        if record.get("冲突说明"):
+            message += f"；{record['冲突说明']}"
+        return record, message

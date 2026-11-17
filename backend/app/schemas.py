@@ -35,6 +35,13 @@ class ActionPayload(BaseModel):
     remark: str | None = None
 
 
+class AdmissionCheckPayload(BaseModel):
+    """准入检查时随请求提交的观测值，用于编码修订与入口重定向的冲突裁定。"""
+
+    重定向URL: str | None = None
+    检测编码: str | None = None
+
+
 
 class TargetsiteEntry(BaseModel):
     """目标站点明细结构。"""
